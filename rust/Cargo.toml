@@ -1,0 +1,17 @@
+[package]
+name = "aethon"
+version = "0.1.0"
+authors = ["Daniel Gritzner <gritzner@tnt.uni-hannover.de>"]
+edition = "2018"
+
+[dependencies]
+num = "0.4"
+rand = "0.8.4"
+rand_xorshift = "0.3.0"
+rand_distr = "0.4.1"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+debug-assertions = false

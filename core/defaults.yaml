@@ -1,0 +1,140 @@
+__defaults: &-defaults
+    empty:
+
+__augmentation_defaults: &augmentation-defaults
+    scaling: .3
+    x_shear: 6
+    y_shear: 6
+    rotation: 30
+    h_flip: 0
+    v_flip: 0
+    noise: .1
+        
+__SegmentationDataset_defaults: &SegmentationDataset-defaults
+    channels:
+        input: [ndvi, ir, red, green, blue, depth]
+    training_samples: 8000
+    split_weights:
+        training: 70
+        validation: 15
+        test: 15
+    min_sample_entropy:
+        threshold: 0
+        training_histogram: False
+        apply_to_validation: False
+        apply_to_test: False
+    augmentation:
+        <<: *augmentation-defaults
+        
+__LGNDataset_defaults: &LGNDataset-defaults
+    <<: *SegmentationDataset-defaults
+    ground_truth_mapping:
+        classes: [3, 1, 4, 5, 0, 0, 0, 5, 0, 2, 2, 2, 2, 2, 5] # map to ISPRS classes
+        lut: # copy of 'lut' from datasets/ISPRSDatasetLoader.py
+        - [  0,  0,  0]
+        - [  0,  0,255]
+        - [  0,255,  0]
+        - [255,  0,  0]
+        - [255,255,  0]
+        - [255,255,255]
+    ignore_class: 5
+
+__hannover_defaults: &hannover-defaults
+    <<: *LGNDataset-defaults
+    domain: hannover
+
+__buxtehude_defaults: &buxtehude-defaults
+    <<: *LGNDataset-defaults
+    domain: buxtehude
+
+__nienburg_defaults: &nienburg-defaults
+    <<: *LGNDataset-defaults
+    domain: nienburg
+
+__vaihingen_defaults: &vaihingen-defaults
+    <<: *SegmentationDataset-defaults
+    domain: vaihingen
+    channels:
+        input: [ndvi, ir, red, green, depth]
+    split_weights:
+        training: 90
+        validation: 10
+    augmentation:
+        <<: *augmentation-defaults
+        rotation: 50
+    ignore_class: 5
+
+__potsdam_defaults: &potsdam-defaults
+    <<: *SegmentationDataset-defaults
+    domain: potsdam
+    split_weights:
+        training: 90
+        validation: 10
+    ignore_class: 5
+
+__toulouse_defaults: &toulouse-defaults
+    <<: *SegmentationDataset-defaults
+    domain: toulouse
+    channels:
+        input: [ndvi, ir, red, green, blue]
+    split_weights:
+        training: 50
+        validation: 25
+        test: 25
+
+__toulouse_multi_defaults: &toulouse_multi-defaults
+    <<: *SegmentationDataset-defaults
+    domain: toulouse_multi
+    channels:
+        input: [ndvi, blue2, blue, green, yellow, red, red2, ir, ir2]
+    split_weights:
+        training: 50
+        validation: 25
+        test: 25
+
+__isaid_defaults: &isaid-defaults
+    <<: *SegmentationDataset-defaults
+    domain: isaid
+    channels:
+        input: [red, green, blue]
+    training_samples: 28000
+    split_weights:
+        training: 95
+        validation: 5
+    min_sample_entropy:
+        threshold: 0.04 # iSAID has many background pixels, avoid empty training samples by setting a minimum entropy level for ground truth images
+        training_histogram: False
+        apply_to_validation: True
+        apply_to_test: True
+
+__SemanticSegmentation_defaults: &SemanticSegmentation-defaults
+    autoencoder: False
+    ignore_model_loss: False
+    learning_rate:
+        min_value: 0
+        num_cycles: 1
+        cycle_length_factor: 2
+    terminate_early: -1
+    val_sample_images:
+        amount:
+            fixed: 5
+            random: 5
+        grid_params:
+            border: 4
+            margins: [4, 8]
+    smoothing: 0.6
+    model_specific_defaults:map: # epochs, max. learning rate, mini-batch size
+        - [[SegForestNet, MobileNetv2], [200, 0.01, 36]]
+        - [[SegForestNet, Xception], [200, 0.003, 18]]
+        - [[FCN, MobileNetv2], [120, 0.013, 36]]
+        - [[FCN, Xception], [120, 0.006, 18]]
+        - [[RAFCN, MobileNetv2], [120, 0.002, 36]]
+        - [[RAFCN, Xception], [120, 0.0002, 18]]
+        - [[FarSeg, MobileNetv2], [120, 0.005, 36]]
+        - [[FarSeg, Xception], [120, 0.001, 18]]
+        - [[PFNet, MobileNetv2], [100, 0.005, 36]]
+        - [[PFNet, Xception], [100, 0.005, 18]]
+        - [[DeepLabv3p, MobileNetv2], [80, 0.008, 36]]
+        - [[DeepLabv3p, Xception], [80, 0.0035, 18]]
+        - [[UNet, UNet], [80, 0.00015, 18]]
+        - [[UNetpp, UNetpp], [80, 0.001, 14]]

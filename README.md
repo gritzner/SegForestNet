@@ -1,5 +1,18 @@
 # SegForestNet
-Reference implementation of SegForestNet, a model which predicts binary space partitioning trees to compute a semantic segmentation of aerial images. The associated paper titled "SegForestNet: Spatial-Partitioning-Based Aerial Image Segmentation" will be available on arXiv on Monday, Feb 06. We will include a link to it here once it is available. Please cite our paper if you use anything from this repository.
+Reference implementation of SegForestNet, a model which predicts binary space partitioning trees to compute a semantic segmentation of aerial images. [The associated paper titled "SegForestNet: Spatial-Partitioning-Based Aerial Image Segmentation" is available on arXiv](https://arxiv.org/abs/2302.01585). Please cite our paper if you use anything from this repository.
+
+```bibtex
+@misc{https://doi.org/10.48550/arxiv.2302.01585,
+  doi = {10.48550/ARXIV.2302.01585},
+  url = {https://arxiv.org/abs/2302.01585},
+  author = {Gritzner, Daniel and Ostermann, Jörn},
+  keywords = {Computer Vision and Pattern Recognition (cs.CV), FOS: Computer and information sciences, FOS: Computer and information sciences, I.5.4},
+  title = {SegForestNet: Spatial-Partitioning-Based Aerial Image Segmentation},
+  publisher = {arXiv},
+  year = {2023},
+  copyright = {Creative Commons Attribution 4.0 International}
+}
+```
 
 # Results
 Our model delivers state-of-the-art performance while using up to 60% fewer model parameters. The table below shows results comparing our model to various other models, all using MobileNetv2 as a backbone. The paper includes more comparisons, e.g., to U-Net variants and using Xception as a backbone instead.

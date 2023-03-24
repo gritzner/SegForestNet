@@ -14,6 +14,8 @@ lut = ( # for ground truth visualization
     (160, 30,230)  # sports venues
 )
 
+annotators = {"03": "3", "04": "3", "07": "2", "08": "2"}
+
 
 class DatasetLoader_toulouse():
     def __init__(self, config):
@@ -24,7 +26,7 @@ class DatasetLoader_toulouse():
             img_set = []
             img_set.append(PIL.Image.open(f"{root_path}/img_multispec_05/TLS_BDSD_RGB_noGeo/TLS_BDSD_RGB_noGeo_{file_id}.tif"))
             img_set.append(PIL.Image.open(f"{root_path}/img_multispec_05/TLS_BDSD_NIRRG_noGeo/TLS_BDSD_NIRRG_noGeo_{file_id}.tif"))
-            img_set.append(PIL.Image.open(f"{root_path}/semantic_05/TLS_indMap_noGeo/TLS_indMap_noGeo_{file_id}.tif"))
+            img_set.append(PIL.Image.open(f"{root_path}/semantic_05/TLS_indMap_noGeo/TLS_indMap_noGeo_{file_id}_{annotators[file_id]}.tif"))
             img_set.append(PIL.Image.open(f"{root_path}/instances_building_05/TLS_instances_building_indMap/TLS_instances_building_indMap_{file_id}.tif"))
             self.images.append(img_set)
         
@@ -54,7 +56,7 @@ class DatasetLoader_toulouse_multi():
             for i in range(img.shape[2]):
                 img_set.append(PIL.Image.fromarray(img[:,:,i]))
             img_set.append(PIL.Image.open(f"{root_path}/img_multispec_05/TLS_BDSD_RGB_noGeo/TLS_BDSD_RGB_noGeo_{file_id}.tif"))
-            img_set.append(PIL.Image.open(f"{root_path}/semantic_05/TLS_indMap_noGeo/TLS_indMap_noGeo_{file_id}.tif"))
+            img_set.append(PIL.Image.open(f"{root_path}/semantic_05/TLS_indMap_noGeo/TLS_indMap_noGeo_{file_id}_{annotators[file_id]}.tif"))
             img_set.append(PIL.Image.open(f"{root_path}/instances_building_05/TLS_instances_building_indMap/TLS_instances_building_indMap_{file_id}.tif"))
             self.images.append(img_set)
         

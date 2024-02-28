@@ -1,0 +1,75 @@
+task: SemanticSegmentation
+output_path: tmp/PW
+clear_output_path: True
+
+SegmentationDataset_params:
+    <<: *$0-defaults
+    random_seed: 0
+    patch_size: [256, 256]
+
+SegForestNet_params:
+    <<: *SegForestNet-defaults
+    downsampling: 3
+    pretrained_encoder: True
+    trees:
+        - num_features:
+            shape: 8
+            content: 24
+          shape_to_content: 0
+          graph: BSPTree(2, Line)
+          classifier: []
+          classifier_skip_from: 0
+          classifier_context: 2
+          one_tree_per_class: True
+    decoder:
+        type: TreeFeatureDecoder
+        num_blocks: 8
+        context: 1
+        intermediate_features: 96
+        use_residual_blocks: True
+        vq:
+            type: [0, 0]
+    region_map:
+        accumulation: add
+        node_weight: 1
+        softmax_temperature:
+            parameters: [epoch, epochs]
+            func: 0
+            value_range: [1, 1]
+    loss:
+        cross_entropy: pixels
+        ce_constant: 10
+        distribution_metric: gini
+        min_region_size: 4
+        weights: [.8625,.0475,.035,.055,0]
+
+FCN_params:
+    downsampling: 5
+    pretrained_encoder: True
+
+RAFCN_params:
+    downsampling: 5
+    pretrained_encoder: True
+
+FarSeg_params:
+    downsampling: 5
+    pretrained_encoder: True
+
+PFNet_params:
+    downsampling: 5
+    pretrained_encoder: True
+
+UNet_params:
+
+DeepLabv3p_params:
+    downsampling: 3
+    pretrained_encoder: True
+    aspp_dilation_rates: [] # default for MobileNetv2 backbone (performs best, even with Xception)
+    #aspp_dilation_rates: [12, 24, 36] # default for Xception backbone with downsampling == 3 according to DeepLab paper
+    #aspp_dilation_rates: [6, 12, 18] # default for Xception backbone with downsampling == 4 according to DeepLab paper
+
+SemanticSegmentation_params:
+    <<: *SemanticSegmentation-defaults
+    dataset: SegmentationDataset
+    model: $1
+    shuffle_seed: -1

@@ -1,8 +1,8 @@
+import os.path
 import glob
 import types
 import itertools
 import subprocess
-call = lambda cmd: subprocess.call(cmd, shell=True)
 import sys
 import json
 import ctypes
@@ -17,7 +17,16 @@ def init(run_cargo, cache_path):
 
     def get_type_string(ty, order):
         return "".join([f"_{ty[order[i]]}" for i in range(len(order))])
-
+    
+    lib_path = "rust/target/release/libaethon.so"
+    if os.path.exists(lib_path):
+        lib_modified_time = os.path.getmtime(lib_path)
+        for fn in glob.iglob("rust/src/*.rs"):
+            if os.path.getmtime(fn) > lib_modified_time:
+                run_cargo = True
+    else:
+        run_cargo = True
+    
     if run_cargo:
         exports = []
         for src_fn in glob.iglob("rust/src/*.rs"):
@@ -71,7 +80,7 @@ def init(run_cargo, cache_path):
                 if index != -1:
                     export.contains_ndarrays = True
                     param = param[:index].strip(), param[index+1:-1].strip()
-                    assert param[0] in ("NdArray", "NdArrayMut")
+                    assert param[0] == "NdArray"
                 else:
                     param = param,
                 export.params.append(param)
@@ -87,9 +96,8 @@ def init(run_cargo, cache_path):
             for i, param in enumerate(export.params):
                 suffix = "," if i < len(export.params)-1 else ""
                 if len(param) > 1:
-                    keyword = "mut" if param[0] == "NdArrayMut" else "const"
                     t = ty[param[1]] if param[1] in ty else param[1]
-                    f.write(f"\tp{i}: *{keyword} {t}, p{i}_shape: *const i32, p{i}_ndims: i32{suffix}\n")
+                    f.write(f"\tp{i}: *const {t}, p{i}_shape: *const i32, p{i}_strides: *const i32, p{i}_ndims: i32{suffix}\n")
                 else:
                     f.write(f"\tp{i}: {param[0]}{suffix}\n")
             f.write(") ")
@@ -100,11 +108,7 @@ def init(run_cargo, cache_path):
                 for i, param in enumerate(export.params):
                     if len(param) == 1:
                         continue
-                    f.write(f"\tndarray!(from_ptr: p{i}_shape; [p{i}_ndims]); ")
-                    if param[0] == "NdArrayMut":
-                        f.write(f"let p{i} = NdArray::from_ptr_mut(p{i}, &p{i}_shape);\n")
-                    else:
-                        f.write(f"ndarray!(from_ptr: p{i}; &p{i}_shape);\n")
+                    f.write(f"\tlet p{i} = NdArray::from_ptr(p{i}, p{i}_shape, p{i}_strides, p{i}_ndims);\n")
                 f.write("\n")
             f.write(f"\t{export.name}(")
             params = ", ".join([f"p{i}" for i in range(len(export.params))])
@@ -123,7 +127,7 @@ def init(run_cargo, cache_path):
                 else:
                     generate_export(f, export, {})
         
-        ret_val = call("cargo build --release --manifest-path rust/Cargo.toml")
+        ret_val = subprocess.call("cargo build --release --manifest-path rust/Cargo.toml", shell=True)
         if ret_val != 0:
             sys.exit(ret_val)
 
@@ -155,7 +159,7 @@ def init(run_cargo, cache_path):
     reverse_type_map = {np.dtype(numpy_type):rust_type for rust_type, (_, numpy_type) in type_map.items() if not numpy_type is None}
     type_map = {rust_type:python_type for rust_type, (python_type, _) in type_map.items()}
 
-    lib = ctypes.CDLL("rust/target/release/libaethon.so")
+    lib = ctypes.CDLL(lib_path)
     
     class FunctionWrapper():
         def __init__(self, export, name_suffix="", params=None):
@@ -166,6 +170,7 @@ def init(run_cargo, cache_path):
                 if len(param) > 1:
                     argtypes.extend([
                         np.ctypeslib.ndpointer(type_map[param[1]]),
+                        np.ctypeslib.ndpointer(ctypes.c_int32),
                         np.ctypeslib.ndpointer(ctypes.c_int32),
                         ctypes.c_int32
                     ])
@@ -179,7 +184,7 @@ def init(run_cargo, cache_path):
             rust_args = []
             for arg in args:
                 if isinstance(arg, np.ndarray):
-                    rust_args.extend([arg, np.asarray(arg.shape,dtype=np.int32), len(arg.shape)])
+                    rust_args.extend([arg, np.asarray(arg.shape,dtype=np.int32), np.asarray(arg.strides,dtype=np.int32), len(arg.shape)])
                 else:
                     rust_args.append(arg)
             return self.func(*rust_args)

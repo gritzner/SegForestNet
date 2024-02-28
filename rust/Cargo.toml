@@ -7,11 +7,13 @@ edition = "2018"
 [dependencies]
 num = "0.4"
 rand = "0.8.4"
-rand_xorshift = "0.3.0"
-rand_distr = "0.4.1"
 
 [lib]
 crate-type = ["cdylib"]
 
 [profile.release]
 debug-assertions = false
+codegen-units = 1
+lto = "fat"
+panic = "abort"
+strip = "symbols"

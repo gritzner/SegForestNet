@@ -32,8 +32,11 @@ class ModelFitter():
         self.config = config
         self.output_float_precision = getattr(config, "output_float_precision", 4)
         self.output_set = set()
-        self.history_filename = getattr(config, "history_filename", "history.json") 
+        self.history_filename = getattr(config, "history_filename", "history.json.bz2")
         self.history = {}
+        if core.device.type == "cuda":
+            cuda_total_mem = torch.cuda.mem_get_info(core.device)[1]
+            self.history["cuda_total_mem"] = cuda_total_mem, round(10 * cuda_total_mem/1024**2) / 10
         max_queue_size = getattr(config, "max_queue_size", 4)
         self.max_queue_size = (max_queue_size - 1) if max_queue_size > 1 else 1
         
@@ -65,12 +68,15 @@ class ModelFitter():
         epochs = self.config.terminate_early if getattr(self.config,"terminate_early",-1)>0 else self.config.epochs
         for epoch in range(epochs):
             epoch_timestamp = time.perf_counter()
-            print(f"starting epoch {epoch+1} at", datetime.datetime.now().time().strftime("%H:%M:%S"))
+            print(f"starting epoch {epoch+1} at", datetime.datetime.now().strftime("%Y-%b-%d, %H:%M:%S"))
             self.pre_epoch(epoch)
             self._fit_epoch(epoch)
             metrics = {key: np.mean(self.history[key][-self.num_mini_batches:]) if isinstance(self.history[key][-1], numbers.Number) and not isinstance(self.history[key][-1], bool) and "loss" in key else self.history[key][-1] for key in self._metrics_keys}
             metrics = types.SimpleNamespace(**metrics)
             self.post_epoch(epoch, metrics)
+            if core.device.type == "cuda":
+                metrics.cuda_free_mem = torch.cuda.mem_get_info(core.device)[0]
+                metrics.cuda_free_mem = metrics.cuda_free_mem, round(10 * metrics.cuda_free_mem/1024**2) / 10
             metrics = metrics.__dict__
             for key in self._metrics_keys:
                 del metrics[key]
@@ -78,14 +84,11 @@ class ModelFitter():
                 if not key in self.history:
                     self.history[key] = []
                 self.history[key].append(value)
-            if core.output_path != None and self.history_filename != None:
-                filename = f"{core.output_path}/{self.history_filename}"
-                print(f"saving history to '{filename}'...")
-                with open(filename, "w") as f:
-                    json.dump(self.history, f)
+            self._save_history_to_file()
             epoch_timestamp = time.perf_counter() - epoch_timestamp
             self._progress(epoch, -1, epoch_timestamp, metrics)
         self.finalize()
+        self._save_history_to_file()
         
     def evaluate(self, epoch, **params):
         num_train_mini_batches = self.num_mini_batches
@@ -231,3 +234,12 @@ class ModelFitter():
             s += (self._last_line_length-len(s))*" "
         print(s, end="\r" if batch >= 0 else "\n\n")
         self._last_line_length = len(s)
+        
+    def _save_history_to_file(self):
+        if core.output_path == None or self.history_filename == None:
+            return
+        
+        filename = f"{core.output_path}/{self.history_filename}"
+        print(f"saving history to '{filename}'")
+        with core.open(filename, "wb") as f:
+            f.write(json.dumps(self.history).encode("utf-8"))

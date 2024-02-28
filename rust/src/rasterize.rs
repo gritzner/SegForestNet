@@ -37,12 +37,10 @@ fn is_inside(polygon: &NdArray<f64>, x: f64, y: f64) -> bool {
 
 //PYTHON_EXPORT
 pub fn rasterize_objects(
-    img: NdArrayMut<u8>, geometry_lengths: NdArray<i32>, polygon_lengths: NdArray<i32>,
+    img: NdArray<u8>, geometry_lengths: NdArray<i32>, polygon_lengths: NdArray<i32>,
     polygons: NdArray<f64>, label: u8, num_threads: i32) {
         
     assert!(num_threads > 0);
-    ndarray!(from_ndarray: img); // required for satisfying lifetime check wrt to multi-threading
-    ndarray!(from_ndarray: polygons); // required for satisfying lifetime check wrt to multi-threading
         
     let height = img.shape[0] as f64;
     let width = img.shape[1] as f64;
@@ -65,7 +63,7 @@ pub fn rasterize_objects(
         
         for j in 0..geometry_lengths[i] {
             let k = polygon_lengths[[i, j]];
-            let polygon = polygons.create_view(&[i, j], 0, k);
+            let polygon = polygons.view(0, i).view(0, j).view_range(0, 0, k);
             
             for l in 0..polygon.shape[0] {
                 let x = polygon[[l, 0]];
@@ -101,7 +99,7 @@ pub fn rasterize_objects(
             let geometry = geometry.clone();
             
             let handle = std::thread::spawn(move || {
-                ndarray!(from_ndarray_mut: img);
+                let mut img = (*img).clone();
                     
                 for y in *top..*bottom {
                     if y % num_threads != thread_id {
@@ -142,7 +140,7 @@ pub fn rasterize_objects(
     }
 }
 
-fn fill(img: &mut NdArrayMut<u8>, cy: i32, cx: i32, votes: &mut NdArrayMut<usize>, ignored_votes: usize) -> bool {
+fn fill(img: &mut NdArray<u8>, cy: i32, cx: i32, votes: &mut NdArray<usize>, ignored_votes: usize) -> bool {
     for i in 0..votes.shape[0] {
         votes[i] = 0;
     }
@@ -174,7 +172,7 @@ fn fill(img: &mut NdArrayMut<u8>, cy: i32, cx: i32, votes: &mut NdArrayMut<usize
 }
 
 //PYTHON_EXPORT
-pub fn flood_fill_holes(mut img: NdArrayMut<u8>) {
+pub fn flood_fill_holes(mut img: NdArray<u8>) {
     let mut undefined_pixels = Vec::new();
     for y in 0..img.shape[0] {
         for x in 0..img.shape[1] {
@@ -184,7 +182,7 @@ pub fn flood_fill_holes(mut img: NdArrayMut<u8>) {
         }
     }
     
-    ndarray!(new: votes -> 0usize; [16]);
+    ndarray!(votes -> 0usize; 16);
     let mut ignored_votes = 1; // don't include the center pixel
     let mut changed_pixels = Vec::new();
     

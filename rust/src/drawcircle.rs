@@ -2,7 +2,7 @@ use crate::utils::*;
 
 //PYTHON_EXPORT
 pub fn draw_circle(
-    mut img: NdArrayMut<u8>, mut gt: NdArrayMut<i32>, center: NdArray<i32>, radius: f32,
+    mut img: NdArray<u8>, mut gt: NdArray<i32>, center: NdArray<i32>, radius: f32,
     color: NdArray<u8>, class_index: i32, yrange: NdArray<i32>, xrange: NdArray<i32>
 ) {
     let radius = radius.powi(2);

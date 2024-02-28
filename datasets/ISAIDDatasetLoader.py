@@ -1,7 +1,7 @@
 import numpy as np
 import core
 import glob
-import PIL.Image
+import cv2 as cv
 from .SparseInstanceImage import SparseInstanceImage
 
 
@@ -27,13 +27,12 @@ lut = ( # for ground truth visualization
 
 class DatasetLoader_isaid():
     def __init__(self, config):
-        root_path = "/data/vehicle_classification/datasets"
-        dota_root_path = f"{root_path}/DOTA/v10"
-        isaid_root_path = f"{root_path}/iSAID"
+        dota_root_path, isaid_root_path = config.dataset_path
 
         class_map = np.empty((len(lut), 3), dtype=np.uint8)
         for i, rgb in enumerate(lut):
             class_map[i] = rgb
+        class_map = np.ascontiguousarray(np.flip(class_map,axis=1))
         
         self.images = []
         self.image_subsets = []
@@ -44,45 +43,28 @@ class DatasetLoader_isaid():
                 self.image_subsets.append(subset_id)
                 
         self.channels = {
-            "red": (0, 0),
+            "red": (0, 2),
             "green": (0, 1),
-            "blue": (0, 2),
-            "gt": (1, 0),
-            "instances": (1, 0)
+            "blue": (0, 0),
+            "gt": (1, 0)
         }
         self.num_classes = 16
-        self.instances = {
-            1: "storage_tank",
-            2: "large_vehicle",
-            3: "small_vehicle",
-            4: "plane",
-            5: "ship",
-            6: "swimming_pool",
-            7: "harbor",
-            8: "tennis_court",
-            9: "ground_track_field",
-            10: "soccer_ball_field",
-            11: "baseball_diamond",
-            12: "bridge",
-            13: "basketball_court",
-            14: "roundabout",
-            15: "helicopter"
-        }
         self.gsd = 26 # GSD varies wildy in DOTA, median of all valid GSDs: 26, mean: 39
         self.lut = lut
 
     @staticmethod
     def load_image(fn, path_prefix, class_map):
-        img_set = []
-    
-        img = PIL.Image.open(fn)
-        if len(img.getbands()) == 1:
-            img = img.convert("RGB")
-        img_set.append(np.asarray(img))
+        img_set = [cv.imread(fn)]
     
         img_id = fn.split("/")[-1].split(".")[0]
-        sem_img = PIL.Image.open(f"{path_prefix}/Semantic_masks/tmp/images/{img_id}_instance_color_RGB.png")
-        inst_img = PIL.Image.open(f"{path_prefix}/Instance_masks/tmp/images/{img_id}_instance_id_RGB.png")                
+        sem_img = cv.imread(
+            f"{path_prefix}/Semantic_masks/tmp/images/{img_id}_instance_color_RGB.png",
+            cv.IMREAD_UNCHANGED
+        )
+        inst_img = cv.imread(
+            f"{path_prefix}/Instance_masks/tmp/images/{img_id}_instance_id_RGB.png",
+            cv.IMREAD_UNCHANGED
+        )
         img_set.append(SparseInstanceImage(sem_img, inst_img, class_map))
 
         return img_set

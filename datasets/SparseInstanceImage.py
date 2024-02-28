@@ -6,31 +6,22 @@ class SparseInstanceImage():
     def __init__(self, gt_rgb, inst_rgb, class_map):
         assert class_map.shape[0] <= 256
         
-        gt_rgb = np.asarray(gt_rgb)
-        inst_rgb = np.asarray(inst_rgb)
-        
         gt = np.empty(gt_rgb.shape[:2], dtype=np.uint8)
         inst = np.empty(gt.shape, dtype=np.int32)
         num_inst = rust.rgb2ids(gt, gt_rgb, inst, inst_rgb, class_map)
                 
         self.instances = np.empty((num_inst, 6), dtype=np.uint64)
-        rows = np.zeros((gt.shape[0], num_inst+1), dtype=np.int32)
-        cols = np.zeros((gt.shape[1], num_inst+1), dtype=np.int32)
-        rust.extract_instances(self.instances, rows, cols, gt, inst)
+        rust.extract_instances(self.instances, gt, inst)
         
-        self.rows = rows[:,1:np.max(rows[:,0])+1].copy()
-        self.cols = cols[:,1:np.max(cols[:,0])+1].copy()
-        assert self.rows.flags['C_CONTIGUOUS'] and self.cols.flags['C_CONTIGUOUS']
-
         masks = [np.where(inst[y0:y1,x0:x1]==i+1, 1, 0) for i, (c, y0, y1, x0, x1, offset) in enumerate(self.instances)]
         masks = [np.asarray(mask.flatten(), dtype=np.uint8) for mask in masks]        
         self.instances[0,-1] = 0
         self.instances[1:,-1] = np.cumsum([mask.shape[0] for mask in masks[:-1]])
         self.masks = np.concatenate(masks)
 
-        self.shape = (self.rows.shape[0], self.cols.shape[0])
+        self.shape = tuple(gt.shape)
         self.dtype = np.dtype(np.int32)
-        self.nbytes = self.instances.nbytes + self.rows.nbytes + self.cols.nbytes + self.masks.nbytes, gt.nbytes + inst.nbytes
+        self.nbytes = self.instances.nbytes + self.masks.nbytes, gt.nbytes + inst.nbytes
         
         assert np.all(gt == self.get_semantic_image())
         assert np.all(inst == self.get_instance_image())

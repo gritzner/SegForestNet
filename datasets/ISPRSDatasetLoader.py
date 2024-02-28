@@ -1,5 +1,5 @@
 import glob
-import PIL.Image
+import cv2 as cv
 import numpy as np
 
 
@@ -21,14 +21,14 @@ rgb2class_map = {
 }
 
 def rgb2class(fn):
-    gt = np.asarray(PIL.Image.open(fn))
+    gt = cv.imread(fn, cv.IMREAD_UNCHANGED)
     new_gt = np.empty(gt.shape[:2], dtype=np.uint8)
     for k, v in rgb2class_map.items():
-        i = np.logical_and(gt[:,:,0]==k[0], gt[:,:,1]==k[1])
-        i = np.logical_and(i, gt[:,:,2]==k[2])
+        i = np.logical_and(gt[:,:,0]==k[2], gt[:,:,1]==k[1])
+        i = np.logical_and(i, gt[:,:,2]==k[0])
         i = np.where(i)
         new_gt[i[0],i[1]] = v
-    return PIL.Image.fromarray(new_gt)
+    return new_gt
 
 
 lut = ( # for ground truth visualization
@@ -43,8 +43,7 @@ lut = ( # for ground truth visualization
 
 class DatasetLoader_vaihingen():
     def __init__(self, config):
-        root_path = "/data/geoTL/daten/ISPRS/Vaihingen/tmp"
-        filenames = [fn.split("/")[-1] for fn in glob.iglob(f"{root_path}/ground_truth_COMPLETE/*.tif")]
+        filenames = [fn.split("/")[-1] for fn in glob.iglob(f"{config.dataset_path}/ground_truth_COMPLETE/*.tif")]
             
         self.images = []
         self.image_subsets = []
@@ -57,15 +56,21 @@ class DatasetLoader_vaihingen():
             
             dsm_fn = fn.replace("top_mosaic_09cm", "dsm_09cm_matching")
             img_set = []
-            img_set.append(PIL.Image.open(f"{root_path}/semantic_labeling/top/{fn}"))
-            img_set.append(PIL.Image.open(f"{root_path}/semantic_labeling/dsm/{dsm_fn}"))
-            img_set.append(rgb2class(f"{root_path}/ground_truth_COMPLETE/{fn}"))
+            img_set.append(cv.imread(
+                f"{config.dataset_path}/semantic_labeling/top/{fn}",
+                cv.IMREAD_UNCHANGED
+            ))
+            img_set.append(cv.imread(
+                f"{config.dataset_path}/semantic_labeling/dsm/{dsm_fn}",
+                cv.IMREAD_UNCHANGED
+            ))
+            img_set.append(rgb2class(f"{config.dataset_path}/ground_truth_COMPLETE/{fn}"))
             self.images.append(img_set)
             
         self.channels = {
-            "ir": (0, 0),
+            "ir": (0, 2),
             "red": (0, 1),
-            "green": (0, 2),
+            "green": (0, 0),
             "depth": (1, 0),
             "gt": (2, 0)
         }
@@ -75,8 +80,7 @@ class DatasetLoader_vaihingen():
 
 class DatasetLoader_potsdam():
     def __init__(self, config):
-        root_path = "/data/geoTL/daten/ISPRS/Potsdam/tmp"
-        filenames = [fn.split("/")[-1] for fn in glob.iglob(f"{root_path}/5_Labels_all/*.tif")]
+        filenames = [fn.split("/")[-1] for fn in glob.iglob(f"{config.dataset_path}/5_Labels_all/*.tif")]
         filenames = list(map(lambda fn: fn[4:fn.rfind("_")], filenames))
         
         self.images = []
@@ -93,23 +97,32 @@ class DatasetLoader_potsdam():
             dsm_fn = dsm_fn.replace("_8", "_08")
             dsm_fn = dsm_fn.replace("_9", "_09")
             img_set = []
-            img_set.append(PIL.Image.open(f"{root_path}/2_Ortho_RGB/top_{fn}_RGB.tif"))
-            img_set.append(PIL.Image.open(f"{root_path}/3_Ortho_IRRG/top_{fn}_IRRG.tif"))
-            img_set.append(PIL.Image.open(f"{root_path}/1_DSM/{dsm_fn}.tif"))
+            img_set.append(cv.imread(
+                f"{config.dataset_path}/2_Ortho_RGB/top_{fn}_RGB.tif",
+                cv.IMREAD_UNCHANGED
+            ))
+            img_set.append(cv.imread(
+                f"{config.dataset_path}/3_Ortho_IRRG/top_{fn}_IRRG.tif",
+                cv.IMREAD_UNCHANGED
+            ))
+            img_set.append(cv.imread(
+                f"{config.dataset_path}/1_DSM/{dsm_fn}.tif",
+                cv.IMREAD_UNCHANGED
+            ))
             if "3_13" in fn:
-                img_set[-1] = img_set[-1].resize((6000,6000), PIL.Image.BICUBIC)
+                img_set[-1] = cv.resize(img_set[-1], (6000,6000), interpolation=cv.INTER_CUBIC)
             if "_4_12" in fn or "6_7" in fn:
-                img_set.append(rgb2class(f"{root_path}/5_Labels_for_participants/top_{fn}_label.tif"))
+                img_set.append(rgb2class(f"{config.dataset_path}/5_Labels_for_participants/top_{fn}_label.tif"))
             else:
-                img_set.append(rgb2class(f"{root_path}/5_Labels_all/top_{fn}_label.tif"))
+                img_set.append(rgb2class(f"{config.dataset_path}/5_Labels_all/top_{fn}_label.tif"))
                 
             self.images.append(img_set)
             
         self.channels = {
-            "ir": (1, 0),
-            "red": (0, 0),
+            "ir": (1, 2),
+            "red": (0, 2),
             "green": (0, 1),
-            "blue": (0, 2),
+            "blue": (0, 0),
             "depth": (2, 0),
             "gt": (3, 0)
         }

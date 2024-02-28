@@ -1,0 +1,32 @@
+git_log_num_lines: 12
+dataset_paths:map:
+    - [hannover, /path/to/datasets/LGN/Hannover]
+    - [buxtehude, /path/to/datasets/LGN/Buxtehude]
+    - [nienburg, /path/to/datasets/LGN/Nienburg]
+    - [toulouse, /path/to/datasets/SemCityToulouse/tmp]
+    - [toulouse_full, /path/to/datasets/SemCityToulouse/tmp]
+    - [toulouse_pan, /path/to/datasets/SemCityToulouse/tmp]
+    - [vaihingen, /path/to/datasets/ISPRS/Vaihingen/tmp]
+    - [potsdam, /path/to/datasets/ISPRS/Potsdam/tmp]
+    - [isaid, [/path/to/datasets/DOTA/v10, /path/to/datasets/iSAID]]
+    - [dlr_landcover, /path/to/datasets/DLR-Datasets/landcover/tmp]
+    - [dlr_roadmaps, /path/to/datasets/DLR-Datasets/roadmaps/tmp]
+    - [dlr_roadsegmentation, /path/to/datasets/DLR-Datasets/roadsegmentation/tmp]
+    - [hameln, /path/to/datasets/IPI/Hameln]
+    - [schleswig, /path/to/datasets/IPI/Schleswig]
+    - [mecklenburg_vorpommern, /path/to/datasets/IPI/MV]
+    - [hameln_DA, /path/to/datasets/IPI/Schleswig-Hameln/preprocessed/Hameln20cm]
+    - [schleswig_DA, /path/to/datasets/IPI/Schleswig-Hameln/preprocessed/Schleswig20cm]
+    - [synthinel, /path/to/datasets/Synthinel-1/tmp]
+    - [synthinel_redroof, /path/to/datasets/Synthinel-1/tmp]
+    - [synthinel_paris, /path/to/datasets/Synthinel-1/tmp]
+    - [synthinel_ancient, /path/to/datasets/Synthinel-1/tmp]
+    - [synthinel_scifi, /path/to/datasets/Synthinel-1/tmp]
+    - [synthinel_palace, /path/to/datasets/Synthinel-1/tmp]
+    - [synthinel_austin, /path/to/datasets/Synthinel-1/tmp]
+    - [synthinel_venice, /path/to/datasets/Synthinel-1/tmp]
+    - [synthinel_modern, /path/to/datasets/Synthinel-1/tmp]
+model_weights_paths:map:
+    - [Xception, /path/to/downloaded/model/weights/xception.pt.gz]
+
+

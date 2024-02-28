@@ -1,8 +1,8 @@
 use crate::utils::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 //PYTHON_EXPORT
-pub fn rgb2ids(mut gt_ids: NdArrayMut<u8>, gt_rgb: NdArray<u8>, mut inst_ids: NdArrayMut<i32>, inst_rgb: NdArray<u8>, class_map_array: NdArray<u8>) -> usize {
+pub fn rgb2ids(mut gt_ids: NdArray<u8>, gt_rgb: NdArray<u8>, mut inst_ids: NdArray<i32>, inst_rgb: NdArray<u8>, class_map_array: NdArray<u8>) -> usize {
     let mut class_map = BTreeMap::new();
     for i in 0..class_map_array.shape[0] {
         class_map.insert((class_map_array[[i,0]], class_map_array[[i,1]], class_map_array[[i,2]]), i as u8);
@@ -30,7 +30,7 @@ pub fn rgb2ids(mut gt_ids: NdArrayMut<u8>, gt_rgb: NdArray<u8>, mut inst_ids: Nd
 }
 
 //PYTHON_EXPORT
-pub fn extract_instances(mut instances: NdArrayMut<u64>, mut rows: NdArrayMut<i32>, mut cols: NdArrayMut<i32>, gt: NdArray<u8>, inst_img: NdArray<i32>) {
+pub fn extract_instances(mut instances: NdArray<u64>, gt: NdArray<u8>, inst_img: NdArray<i32>) {
     for i in 0..instances.shape[0] {
         instances[[i, 0]] = 0; // class ID
         instances[[i, 1]] = u64::MAX; // first y (inclusive)
@@ -58,85 +58,4 @@ pub fn extract_instances(mut instances: NdArrayMut<u64>, mut rows: NdArrayMut<i3
             instances[[i, 4]] = instances[[i, 4]].max(x64+1);
         }
     }
-    
-    for i in 0..instances.shape[0] {
-        let instance_id = (i + 1) as u64;
-        
-        for y in instances[[i, 1]]..instances[[i, 2]] {
-            rows[[y, 0]] += 1;
-            rows[[y, instance_id]] = 1;
-        }
-        
-        for x in instances[[i, 3]]..instances[[i, 4]] {
-            cols[[x, 0]] += 1;
-            cols[[x, instance_id]] = 1;
-        }
-    }
-    
-    for y in 0..gt.shape[0] {
-        let mut j = 1;
-        for i in 1..rows.shape[1] {
-            if rows[[y, i]] == 1 {
-                rows[[y, j]] = i;
-                j += 1;
-            }
-        }
-        for i in j..rows.shape[1] {
-            rows[[y, i]] = 0;
-        }
-    }
-    
-    for x in 0..gt.shape[1] {
-        let mut j = 1;
-        for i in 1..cols.shape[1] {
-            if cols[[x, i]] == 1 {
-                cols[[x, j]] = i;
-                j += 1;
-            }
-        }
-        for i in j..cols.shape[1] {
-            cols[[x, i]] = 0;
-        }
-    }
-}
-
-pub fn convert_to_sparse_map(array: &NdArray<i32>) -> BTreeMap<i32, BTreeSet<i32>> {
-    let mut map = BTreeMap::new();
-    for i in 0..array.shape[0] {
-        let mut instances = BTreeSet::new();
-        for j in 0..array.shape[1] {
-            let instance_id = array[[i, j]];
-            if instance_id == 0 {
-                break;
-            }
-            instances.insert(instance_id);
-        }
-        map.insert(i, instances);
-    }
-    
-    map
-}
-
-pub fn get_pixel_sparse(y: i32, x: i32, instances: &NdArray<u64>, row: &BTreeSet<i32>, cols: &NdArray<i32>, masks: &NdArray<u8>, return_class: bool) -> i32 {
-    for i in 0..cols.shape[1] {
-        let instance_id = cols[[x, i]];
-        if instance_id == 0 {
-            break;
-        }
-        if !row.contains(&instance_id) {
-            continue;
-        }
-        
-        let instance_index = instance_id - 1;        
-        let mask_y = y - (instances[[instance_index, 1]] as i32);
-        let mask_x = x - (instances[[instance_index, 3]] as i32);
-        let mask_width = (instances[[instance_index, 4]] - instances[[instance_index, 3]]) as i32;
-        let index = (instances[[instance_index, 5]] as i32) + mask_y * mask_width + mask_x;
-        
-        if masks[index] != 0 {
-            return if return_class { instances[[instance_index, 0]] as i32 } else { instance_id };
-        }
-    }
-    
-    0
 }

@@ -1,0 +1,35 @@
+servers:
+    login: your_login_server # login via ssh must be possible without entering a password
+    transfer: your_transfer_server # for file copying
+primary_path: /path/with/a/lot/of/space/to/store/lots/of/datasets
+secondary_path: /path/where/your/current/datasets/you/are/working/with/are/stored
+slurm:
+    monitor:
+        port: 7777
+        timeout: 5
+        remote_timeout: 60
+        timer: 300
+        user: your_username
+        verbose: False
+    options:map:
+        - [mail-user, your_address@example.com]
+        - [mail-type, ALL]
+        - [partition, gpu_partition]
+        - [nodes, 1]
+        - [cpus-per-task, 12]
+        - [gres, "gpu:1"]
+    script: |
+        #!/bin/bash
+        {slurm_options}
+        mkdir -p {jobs_path}/$SLURM_JOB_ID
+        cd {jobs_path}/$SLURM_JOB_ID
+        source /path/to/your/conda/installation/bin/activate torch
+        export PROJ_LIB=/path/to/your/conda/installation/envs/torch/share/proj
+        export PATH=/path/to/your/cargo/installation/usually/your/home/.cargo/bin:$PATH
+        export LD_LIBRARY_PATH=/path/to/your/conda/installation/envs/torch/lib:$LD_LIBRARY_PATH
+        tar -xf {jobs_path}/{code}
+        python -u aethon.py {parameters} --git-log git_log.txt
+        return_value=$?
+        rm -rf tmp/cache
+        exit $return_value
+    jobs_path: /path/where/slurm/jobs/store/their/files

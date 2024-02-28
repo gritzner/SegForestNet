@@ -3,8 +3,8 @@ use crate::utils::*;
 
 //PYTHON_EXPORT u8,u16,i32; u8,u16,i32
 pub fn accumulate_pixel_statistics<T: Copy + Integer + ToPrimitive, U: Copy + Integer + ToPrimitive>(
-    mut accum_buffer: NdArrayMut<u64>, mut accum_buffer_depth: NdArrayMut<f64>,
-    mut class_counts: NdArrayMut<u64>, image: NdArray<T>, gt: NdArray<U>,
+    mut accum_buffer: NdArray<u64>, mut accum_buffer_depth: NdArray<f64>,
+    mut class_counts: NdArray<u64>, image: NdArray<T>, gt: NdArray<U>,
     depth: NdArray<f32>) {
         
     for y in 0..image.shape[0] {
@@ -29,9 +29,9 @@ pub fn accumulate_pixel_statistics<T: Copy + Integer + ToPrimitive, U: Copy + In
 
 //PYTHON_EXPORT u8,u16,i32
 pub fn accumulate_pixel_statistics_sparse<T: Copy + Integer + ToPrimitive>(
-    mut accum_buffer: NdArrayMut<u64>, mut accum_buffer_depth: NdArrayMut<f64>, mut class_counts: NdArrayMut<u64>,
+    mut accum_buffer: NdArray<u64>, mut accum_buffer_depth: NdArray<f64>, mut class_counts: NdArray<u64>,
     image: NdArray<T>, instances: NdArray<u64>, masks: NdArray<u8>, depth: NdArray<f32>) {
-        
+    
     for y in 0..image.shape[0] {
         for x in 0..image.shape[1] {
             for c in 0..image.shape[2] {

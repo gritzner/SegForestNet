@@ -3,7 +3,7 @@ import numpy as np
 import rust
 import datasets
 import types
-import PIL.Image
+import cv2 as cv
 import torch
 import itertools
 import utils
@@ -14,15 +14,11 @@ from .SegmentationDatasetPatchProviders import *
 class SegmentationDataset():
     def __init__(self, config, params):
         print(f"loading '{config.domain}' images ...")
+        config.dataset_path = core.user.dataset_paths[config.domain]
         self.base = getattr(datasets, f"DatasetLoader_{config.domain}")(config)
         assert self.base.channels["gt"][1] == 0
         self.name = config.domain
         self.num_classes = self.base.num_classes
-        self.has_instances = hasattr(self.base, "instances")
-        if self.has_instances:
-            assert "instances" in self.base.channels
-            assert self.base.channels["instances"][1] == 0
-            self.instances = self.base.instances
         self.lut = self.base.lut
         self.ignore_class = getattr(config, "ignore_class", -100)
         
@@ -53,6 +49,13 @@ class SegmentationDataset():
         self.compute_metadata(config)
         if hasattr(config, "ground_truth_mapping"):
             self.map_ground_truth(config.ground_truth_mapping)
+
+        if self.ignore_class < 0:
+            self.ignore_class = self.num_classes
+            self.num_classes += 1
+            self.lut = list(self.lut)
+            self.lut.append((0, 0, 0))
+            self.lut = tuple(self.lut)
         
         rng = np.random.RandomState(core.random_seeds[config.random_seed])
         self.split_dataset(rng, config.split_weights)
@@ -60,33 +63,31 @@ class SegmentationDataset():
         self.create_augmentation(rng, config)
         
         self.training = types.SimpleNamespace(
-            x = NormalizedAugmentedInputProvider(self, self.base.input_channels, config),
-            x_gt = NormalizedAugmentedInputProvider(self, self.base.gt_channel, config),
+            x = NormalizedAugmentedInputProvider(self, self.base.input_channels, False, config),
+            x_no_rad_aug = NormalizedAugmentedInputProvider(self, self.base.input_channels, True, config),
+            x_gt = NormalizedAugmentedInputProvider(self, self.base.gt_channel, False, config),
             x_vis = AugmentedInputProvider(self, config),
             y = AugmentedOutputProvider(self, config)
         )
         
-        val_patch_info = self.split_images(*self.split[1:3], config.patch_size)
+        val_patch_info = self.split_images(*self.split[1:3], config.patch_size, .5 if config.augmentation.at_test_time else 0)
         self.validation = types.SimpleNamespace(
-            x = NormalizedInputProvider(self, val_patch_info, self.base.input_channels, config.patch_size),
-            x_gt = NormalizedInputProvider(self, val_patch_info, self.base.gt_channel, config.patch_size),
-            x_vis = InputProvider(self, val_patch_info, config.patch_size),
-            y = OutputProvider(self, val_patch_info, config.patch_size)
+            x = NormalizedInputProvider(self, val_patch_info, self.base.input_channels, config.patch_size, config.augmentation.at_test_time),
+            x_gt = NormalizedInputProvider(self, val_patch_info, self.base.gt_channel, config.patch_size, config.augmentation.at_test_time),
+            x_vis = InputProvider(self, val_patch_info, config.patch_size, config.augmentation.at_test_time),
+            y = OutputProvider(self, val_patch_info, config.patch_size, config.augmentation.at_test_time),
+            index_map = IndexMapProvider(val_patch_info, config.patch_size, config.augmentation.at_test_time)
         )
         
-        test_patch_info = self.split_images(*self.split[2:4], config.patch_size)
+        test_patch_info = self.split_images(*self.split[2:4], config.patch_size, .5 if config.augmentation.at_test_time else 0)
         self.test = types.SimpleNamespace(
-            x = NormalizedInputProvider(self, test_patch_info, self.base.input_channels, config.patch_size),
-            x_gt = NormalizedInputProvider(self, test_patch_info, self.base.gt_channel, config.patch_size),
-            x_vis = InputProvider(self, test_patch_info, config.patch_size),
-            y = OutputProvider(self, test_patch_info, config.patch_size)
+            x = NormalizedInputProvider(self, test_patch_info, self.base.input_channels, config.patch_size, config.augmentation.at_test_time),
+            x_gt = NormalizedInputProvider(self, test_patch_info, self.base.gt_channel, config.patch_size, config.augmentation.at_test_time),
+            x_vis = InputProvider(self, test_patch_info, config.patch_size, config.augmentation.at_test_time),
+            y = OutputProvider(self, test_patch_info, config.patch_size, config.augmentation.at_test_time),
+            index_map = IndexMapProvider(test_patch_info, config.patch_size, config.augmentation.at_test_time)
         )
         
-        if self.has_instances:
-            self.training.y_inst = AugmentedInstanceProvider(self, config)
-            self.validation.y_inst = InstanceProvider(self, val_patch_info, config.patch_size)
-            self.test.y_inst = InstanceProvider(self, test_patch_info, config.patch_size)
-            
         self.remove_low_entropy_samples(rng, config)
             
         for i, (dataset, label) in enumerate(((self.training, "training"), (self.validation, "validation"), (self.test, "test"))):
@@ -100,38 +101,21 @@ class SegmentationDataset():
             print(f"# of {label} samples (images, pixels): {dataset.x.shape[0]} ({self.split[i+1]-self.split[i]}, {num_pixels})")
         print(f"input shape: {self.training.x.shape[1:]} -> {self.dtype.base.__name__}")
         print(f"# of classes: {self.num_classes} ({self.dtype.gt.__name__})")
-        if self.has_instances:
-            for c in sorted(self.instances.keys()):
-                class_name = self.instances[c]
-                print(f"# of '{class_name}' instances ({self.dtype.instances.__name__}):")
-                print("  training:", np.sum([img.num_instances[c] for img in self.base.images[self.split[0]:self.split[1]]]))
-                print("  validation:", np.sum([img.num_instances[c] for img in self.base.images[self.split[1]:self.split[2]]]))
-                print("  test:", np.sum([img.num_instances[c] for img in self.base.images[self.split[2]:self.split[3]]]))
                 
     def resample(self, resize_factor):
-        no_interp_indices = (self.base.channels["gt"][0], self.base.channels["instances"][0] if self.has_instances else -1)
-        
         for img_set in self.base.images:
             for i, img in enumerate(img_set):
-                assert isinstance(img, PIL.Image.Image)
-                size = (
-                    round(img.size[0] * resize_factor),
-                    round(img.size[1] * resize_factor)
-                )
-                interp = PIL.Image.NEAREST if i in no_interp_indices else PIL.Image.BICUBIC
-                img_set[i] = img.resize(size, interp)
+                size = round(img.shape[1]*resize_factor), round(img.shape[0]*resize_factor)
+                interp = cv.INTER_NEAREST if i == self.base.channels["gt"][0] else cv.INTER_CUBIC
+                img_set[i] = cv.resize(img, size, interpolation=interp)
                     
     def convert_to_numpy(self):
-        dtypes = [set(), set(), set()]
-        index_map = {
-            self.base.channels["gt"][0]: 1,
-            (self.base.channels["instances"][0] if self.has_instances else -1): 2
-        }
+        dtypes = [set(), set()]
         
         for i, img_set in enumerate(self.base.images):
-            self.base.images[i] = [np.asarray(img) if isinstance(img, PIL.Image.Image) else img for img in img_set]
+            self.base.images[i] = [img if isinstance(img,SparseInstanceImage) else img.copy() for img in img_set]
             for j, img in enumerate(self.base.images[i]):
-                k = index_map[j] if j in index_map else 0
+                k = 1 if j == self.base.channels["gt"][0] else 0
                 if img.dtype != np.float32:
                     dtypes[k].add(img.dtype)
                 if len(img.shape) == 2 and img.dtype != np.float32 and k == 0:
@@ -142,17 +126,15 @@ class SegmentationDataset():
                 assert dtype in (np.uint8, np.uint16, np.int32)
             dtypes[i] = np.int32 if np.dtype(np.int32) in dtypes_subset else (np.uint16 if np.dtype(np.uint16) in dtypes_subset else np.uint8)        
             if i > 0 and len(dtypes_subset) > 1:
-                index = [k for k,v in index_map.items() if v==i][0]
                 for img_set in self.base.images:
-                    img_set[index] = np.asarray(img_set[index], dtype=dtypes[i])
+                    img_set[index] = np.asarray(img_set[self.base.channels["gt"][0]], dtype=dtypes[i])
                 
-        self.dtype = types.SimpleNamespace(base=dtypes[0], gt=dtypes[1], instances=dtypes[2])
+        self.dtype = types.SimpleNamespace(base=dtypes[0], gt=dtypes[1])
         
     def merge_channels(self):
-        channels = [c for c in self.base.channels if not c in ("gt", "depth", "instances")]
+        channels = [c for c in self.base.channels if not c in ("gt", "depth")]
         gt_index = self.base.channels["gt"][0]
         depth_index = self.base.channels["depth"][0]
-        instances_index = self.base.channels["instances"][0] if self.has_instances else depth_index
         for i, img_set in enumerate(self.base.images):
             img = np.empty([*img_set[0].shape[:2], len(channels)], dtype=self.dtype.base)
             for j, c in enumerate(channels):
@@ -160,8 +142,9 @@ class SegmentationDataset():
                 assert img_set[indices[0]].dtype in (np.uint8, np.uint16, np.int32)
                 img[:,:,j] = img_set[indices[0]][:,:,indices[1]]
             assert img_set[depth_index].dtype == np.float32
-            self.base.images[i] = types.SimpleNamespace(base=img, gt=img_set[gt_index], depth=img_set[depth_index], instances=img_set[instances_index])
+            self.base.images[i] = types.SimpleNamespace(base=img, gt=img_set[gt_index], depth=img_set[depth_index])
             assert isinstance(self.base.images[i].gt, np.ndarray) or isinstance(self.base.images[i].gt, SparseInstanceImage)
+            self.base.images[i].depth -= np.min(self.base.images[i].depth)
         self.base.channels = channels
         
     def compute_metadata(self, config):
@@ -183,25 +166,9 @@ class SegmentationDataset():
         self.base.gt_channel = self.get_channel_indices(["gt"])
         
         self.base.depth_range = np.asarray([np.inf, -np.inf], dtype=np.float32)
-        for min_val, max_val in core.thread_pool.map(self.get_depth_range_and_count_instances, self.base.images):
-            self.base.depth_range[0] = min(self.base.depth_range[0], min_val)
-            self.base.depth_range[1] = max(self.base.depth_range[0], max_val)            
-        
-    def get_depth_range_and_count_instances(self, img):
-        if self.has_instances:
-            img.num_instances = {}
-            for c in self.instances.keys():
-                if isinstance(img.instances, np.ndarray):
-                    i = (img.gt==c).nonzero()
-                    instances = np.unique(img.instances[i[0],i[1]])
-                    if instances[0] == 0:
-                        instances = instances[1:]
-                    img.num_instances[c] = instances.shape[0]
-                else:
-                    assert isinstance(img.instances, SparseInstanceImage)
-                    img.num_instances[c] = np.count_nonzero(img.instances.instances[:,0] == c)
-                    
-        return np.min(img.depth), np.max(img.depth)
+        for img in self.base.images:
+            self.base.depth_range[0] = min(self.base.depth_range[0], np.min(img.depth))
+            self.base.depth_range[1] = max(self.base.depth_range[0], np.max(img.depth))            
         
     def get_channel_indices(self, channels):
         indices = np.empty(len(channels), dtype=np.int32)
@@ -336,13 +303,14 @@ class SegmentationDataset():
         self.normalization_params[-1] = accum_buffer[1] / num_pixels
         self.normalization_params[:,1] -= self.normalization_params[:,0]**2
         self.normalization_params[:,1] = np.sqrt(self.normalization_params[:,1])
+        np.save(f"{core.output_path}/normalization_params.npy", self.normalization_params)
         
     def get_pixel_statistics(self, i):
         class_counts = np.zeros_like(self.class_counts)
         accum_buffer = (
             np.zeros([len(self.base.channels), 2], dtype=np.uint64),
             np.zeros(2, dtype=np.float64)
-        )        
+        )
         
         img = self.base.images[i]
         if isinstance(img.gt, np.ndarray):
@@ -355,11 +323,13 @@ class SegmentationDataset():
     def create_augmentation(self, rng, config):
         self.augmentation = types.SimpleNamespace(
             image = np.empty(config.training_samples, dtype=np.int32),
-            transforms = np.empty([config.training_samples, 3, 3], dtype=np.float32),
+            transforms = np.empty([config.training_samples, 2, 3], dtype=np.float64),
             flips = np.zeros([config.training_samples, 2], dtype=np.uint8),
-            noise = types.SimpleNamespace(
-                seed = np.empty(config.training_samples, dtype=np.uint64),
-                magnitude = np.empty(config.training_samples, dtype=np.float32)
+            radiometric = types.SimpleNamespace(
+                contrast = np.empty(config.training_samples, dtype=np.float64),
+                brightness = np.empty(config.training_samples, dtype=np.float64),
+                seed = np.empty(config.training_samples, dtype=np.uint32),
+                noise = np.empty(config.training_samples, dtype=np.float64)
             )
         )
         
@@ -368,48 +338,31 @@ class SegmentationDataset():
             
     def create_augmented_sample(self, i, rng, config):
         self.augmentation.image[i] = int(rng.uniform(*self.split[:2]))
-        self.augmentation.transforms[i] = np.eye(3, dtype=np.float32)
-            
-        # scaling
-        val = rng.uniform(-config.augmentation.scaling, config.augmentation.scaling)
-        val = 2**val
-        t = np.eye(3, dtype=np.float32)
-        t[0,0] = val * config.patch_size[1] * 0.5
-        t[1,1] = val * config.patch_size[0] * 0.5
-        self.augmentation.transforms[i] = t @ self.augmentation.transforms[i]
-            
-        # horizontal shearing
-        val = rng.uniform(-config.augmentation.x_shear, config.augmentation.x_shear)
-        if val != 0:
-            t = np.eye(3, dtype=np.float32)
-            t[0,1] = np.tan(val*np.pi/180)
-            self.augmentation.transforms[i] = t @ self.augmentation.transforms[i]
-                
-        # vertical shearing
-        val = rng.uniform(-config.augmentation.y_shear, config.augmentation.y_shear)
-        if val != 0:
-            t = np.eye(3, dtype=np.float32)
-            t[1,0] = np.tan(val*np.pi/180)
-            self.augmentation.transforms[i] = t @ self.augmentation.transforms[i]
-            
-        # rotation
-        val = rng.uniform(-config.augmentation.rotation, config.augmentation.rotation)
-        if val != 0:
-            val = val * np.pi / 180
-            t = np.eye(3, dtype=np.float32)
-            t[0,0] = np.cos(val)
-            t[1,0] = np.sin(val)
-            t[0,1] = -t[1,0]
-            t[1,1] = t[0,0]
-            self.augmentation.transforms[i] = t @ self.augmentation.transforms[i]
+        img = self.base.images[self.augmentation.image[i]].base
             
         # translation ("cropping")
-        img = self.base.images[self.augmentation.image[i]].base
-        t = np.eye(3, dtype=np.float32)
-        t[0,2] = rng.uniform(config.patch_size[1]//2, img.shape[1]-(config.patch_size[1]//2))
-        t[1,2] = rng.uniform(config.patch_size[0]//2, img.shape[0]-(config.patch_size[0]//2))
-        self.augmentation.transforms[i] = t @ self.augmentation.transforms[i]
-                
+        T = np.eye(3, dtype=np.float64)
+        translation = rng.randint(img.shape[1]-config.patch_size[1]+1), rng.randint(img.shape[0]-config.patch_size[0]+1)
+        T[:2,2] = translation
+
+        # horizontal shearing
+        val = rng.uniform(-config.augmentation.x_shear, config.augmentation.x_shear)
+        T2 = np.eye(3, dtype=np.float64)
+        T2[0,1] = np.tan(val*np.pi/180)
+        T = T2 @ T
+
+        # vertical shearing
+        val = rng.uniform(-config.augmentation.y_shear, config.augmentation.y_shear)
+        T2[0,1] = 0
+        T2[1,0] = np.tan(val*np.pi/180)
+        T = T2 @ T
+
+        # rotation and scaling
+        angle = rng.uniform(-config.augmentation.rotation, config.augmentation.rotation)
+        scaling = 2**rng.uniform(-config.augmentation.scaling, config.augmentation.scaling)
+        T2 = cv.getRotationMatrix2D((translation[0]+.5*config.patch_size[1], translation[1]+.5*config.patch_size[0]), angle, scaling)
+        self.augmentation.transforms[i] = T2 @ T
+
         # horizontal flip
         if rng.rand() < config.augmentation.h_flip:
             self.augmentation.flips[i,0] = 1
@@ -418,17 +371,20 @@ class SegmentationDataset():
         if rng.rand() < config.augmentation.v_flip:
             self.augmentation.flips[i,1] = 1
             
-        # noise
-        self.augmentation.noise.seed[i] = rng.randint(np.iinfo(np.int64).max)
-        self.augmentation.noise.magnitude[i] = rng.uniform(0, config.augmentation.noise)
+        # radiometric augmentation (noise, brightness, contrast)
+        self.augmentation.radiometric.contrast[i] = 1 + rng.uniform(-config.augmentation.contrast, config.augmentation.contrast)
+        self.augmentation.radiometric.brightness[i] = rng.uniform(-config.augmentation.brightness, config.augmentation.brightness)
+        self.augmentation.radiometric.seed[i] = rng.randint(np.iinfo(np.uint32).max)
+        self.augmentation.radiometric.noise[i] = rng.uniform(0, config.augmentation.noise)
     
-    def split_images(self, begin, end, patch_size):
+    def split_images(self, begin, end, patch_size, overlap):
+        assert 0 <= overlap < 1
+        overlap = 1 / (1 - overlap)
         result = []
         for i in range(begin, end):
             img = self.base.images[i].base
-            yx = [
-                np.linspace(0,img.shape[j]-patch_size[j],int(np.ceil(img.shape[j]/patch_size[j]))) for j in range(2)
-            ]
+            yx = [img.shape[j]-patch_size[j] for j in range(2)]
+            yx = [np.linspace(0,endpoint,int(np.ceil(overlap*endpoint/patch_size[j]))+1) for j,endpoint in enumerate(yx)]
             yx = [np.asarray(np.round(j), dtype=np.int32) for j in yx]
             for y, x in itertools.product(yx[0], yx[1]):
                 result.append((i, y, x))
@@ -436,18 +392,42 @@ class SegmentationDataset():
     
     def remove_low_entropy_samples(self, rng, full_config):
         config = full_config.min_sample_entropy
+        if config.threshold <= 0:
+            assert not config.training_histogram
+            return
+        
+        cache_filename = "datasets/isaid_cache.npz"
+        ignore_cache = full_config.domain != "isaid" or getattr(config, "ignore_cache", False)
+        create_cache = full_config.domain == "isaid" and getattr(config, "create_cache", False)
         
         entropies = []
-        for i in range(self.training.y.shape[0]): # do not parallelize, so that the training set stays deterministic!
-            entropy = None
-            while True:
-                entropy = self.get_entropy(self.training.y[i])
-                if entropy >= config.threshold:
-                    break
-                self.create_augmented_sample(i, rng, full_config)
-            entropies.append(entropy)
+        if ignore_cache or create_cache:
+            for i in range(self.training.y.shape[0]): # do not parallelize, so that the training set stays deterministic!
+                entropy = None
+                while True:
+                    entropy = self.get_entropy(self.training.y[i])
+                    if entropy >= config.threshold:
+                        break
+                    self.create_augmented_sample(i, rng, full_config)
+                entropies.append(entropy)
+            if create_cache:
+                print(f"creating '{cache_filename}' ...")
+                cache = self.augmentation.__dict__.copy()
+                cache.update(cache["radiometric"].__dict__.copy())
+                del cache["radiometric"]
+                np.savez_compressed(cache_filename, **cache)
+        else:
+            print(f"loading '{cache_filename}' ...")
+            cache = np.load(cache_filename)
+            for cached_array in cache.files:
+                if cached_array in self.augmentation.__dict__:
+                    self.augmentation.__dict__[cached_array][:] = cache[cached_array]
+                else:
+                    self.augmentation.radiometric.__dict__[cached_array][:] = cache[cached_array]
+            cache.close()
             
         if config.training_histogram:
+            assert ignore_cache or create_cache
             import matplotlib.pyplot as plt
             utils.cdf_plot({"training sample entropy": entropies})
             plt.tight_layout()
@@ -463,10 +443,7 @@ class SegmentationDataset():
                     keep.append(entropy >= config.threshold)
             keep = np.asarray(keep)
             
-            providers = [dataset.x, dataset.x_gt, dataset.x_vis, dataset.y]
-            if self.has_instances:
-                providers.append(dataset.y_inst)
-            for provider in providers:
+            for provider in (dataset.x, dataset.x_gt, dataset.x_vis, dataset.y):
                 provider.patch_info = provider.patch_info[keep]
                 provider.shape = (provider.patch_info.shape[0], *provider.shape[1:])
 
@@ -475,3 +452,14 @@ class SegmentationDataset():
         p = k / np.sum(k)
         p[p<10**-6] = 10**-6
         return -np.sum(p * np.log(p))
+    
+    def replace_normalization_params(self, new_params):
+        assert len(new_params.shape) in (1, 2)
+        if len(new_params.shape) == 1:
+            new_params = np.expand_dims(new_params, axis=1)
+        assert new_params.shape[1] in (1, 2)
+        assert self.normalization_params.shape[0] == new_params.shape[0]
+        if new_params.shape[1] == 1:
+            self.normalization_params[:,1] = new_params[:,0]
+        else:
+            self.normalization_params[:] = new_params

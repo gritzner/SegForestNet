@@ -1,34 +1,12 @@
 from .modelfitter import ModelFitter
 from .lrscheduler import LearningRateScheduler
 from .confusionmatrix import ConfusionMatrix
-from .imagegrid import ImageGrid
-from .involution import Involution
-from .experiments import *
-import core
+from .vectorquantization import create_vector_quantization_layer
+from .sam import SAM
+import numpy as np
 import torch
 import torch.nn as nn
-import os
-import http.client
-import urllib
-
-
-def push_notification(title, message):
-    if not hasattr(core.user, "pushover"):
-        return
-    
-    params = urllib.parse.urlencode({
-        "token": core.user.pushover.api_token,
-        "user": core.user.pushover.user_key,
-        "title": str(title),
-        "message": str(message)
-    })
-    
-    conn = http.client.HTTPSConnection("api.pushover.net:443")
-    conn.request(
-        "POST", "/1/messages.json", params,
-        {"Content-type": "application/x-www-form-urlencoded"}
-    )
-    conn.getresponse()
+import types
 
 
 def hsv2rgb(h, s, v):
@@ -69,11 +47,18 @@ def norm_wrapper(norm_type):
             
         return PixelNorm2d
     return getattr(nn, norm_type)
+
+def optim_wrapper(optim_type):
+    if optim_type == "SAM":
+        return SAM
+    else:
+        return getattr(torch.optim, optim_type)
     
-def get_mini_batch_iterator(mini_batch_size):
+def get_mini_batch_iterator(mini_batch_size, return_indices=False):
     class MiniBatchIterator():
         def __init__(self):
             self.mini_batch_size = mini_batch_size
+            self.return_indices = return_indices
         
         def __call__(self, data, *data2):
             if len(data2) > 0:
@@ -82,13 +67,33 @@ def get_mini_batch_iterator(mini_batch_size):
             with torch.no_grad():
                 for j in range(0, data.shape[0], self.mini_batch_size):
                     batch_data = data[j:j+self.mini_batch_size]
-                    if len(data2) == 0:
+                    if len(data2) == 0 and not self.return_indices:
                         yield batch_data
                     else:
-                        batch_data = [batch_data]
+                        if self.return_indices:
+                            batch_data = [np.asarray(range(j,j+self.mini_batch_size))[:batch_data.shape[0]], batch_data]
+                        else:
+                            batch_data = [batch_data]
                         batch_data.extend([
                             i[j:j+self.mini_batch_size] for i in data2
                         ])
                         yield tuple(batch_data)
         
     return MiniBatchIterator()
+
+def get_scheduler(config):
+    if isinstance(config, dict):
+        config = types.SimpleNamespace(**config)
+    
+    class Scheduler():
+        def __init__(self):
+            params = ",".join(config.parameters)
+            self.func = eval(f"lambda {params}: {config.func}")
+            self.value_range = config.value_range
+            self.value = self.value_range[0]
+        
+        def __call__(self, *params):
+            self.value = self.func(*params)
+            self.value = (1-self.value)*self.value_range[0] + self.value*self.value_range[1]
+        
+    return Scheduler()

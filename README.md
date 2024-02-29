@@ -2,18 +2,19 @@
 Reference implementation of SegForestNet, a model which predicts binary space partitioning trees to compute a semantic segmentation of aerial images. [The associated paper titled "SegForestNet: Spatial-Partitioning-Based Aerial Image Segmentation" is available on arXiv](https://arxiv.org/abs/2302.01585). Please cite our paper if you use anything from this repository.
 
 ```bibtex
-@misc{https://doi.org/10.48550/arxiv.2302.01585,
-  doi = {10.48550/ARXIV.2302.01585},
-  url = {https://arxiv.org/abs/2302.01585},
-  author = {Gritzner, Daniel and Ostermann, Jörn},
-  keywords = {Computer Vision and Pattern Recognition (cs.CV), FOS: Computer and information sciences, FOS: Computer and information sciences, I.5.4},
-  title = {SegForestNet: Spatial-Partitioning-Based Aerial Image Segmentation},
-  publisher = {arXiv},
-  year = {2023},
-  copyright = {Creative Commons Attribution 4.0 International}
+@misc{gritzner2024segforestnet,
+      title = {SegForestNet: Spatial-Partitioning-Based Aerial Image Segmentation}, 
+      author = {Gritzner, Daniel and Ostermann, Jörn},
+      publisher = {arXiv},
+      year = {2024},
+      eprint = {2302.01585},
+      archivePrefix = {arXiv},
+      primaryClass = {cs.CV}
+      doi = {10.48550/ARXIV.2302.01585},
+      url = {https://arxiv.org/abs/2302.01585},
+      keywords = {Computer Vision and Pattern Recognition (cs.CV), FOS: Computer and information sciences, FOS: Computer and information sciences, I.5.4},
 }
 ```
-
 # Results
 Our model delivers state-of-the-art performance, even under non optimal training conditions (see paper for details). While other models, e.g., DeepLab v3+, deliver performance on a similar level, SegForestNet is better at predicting small object such as cars properly. It predicts proper rectangles rather than round-ish shapes. Also, car segments which should be disconnected may merge into one larger region when using other models.
 

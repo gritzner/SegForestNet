@@ -16,7 +16,7 @@ Reference implementation of SegForestNet, a model which predicts binary space pa
 }
 ```
 # Results
-Our model delivers state-of-the-art performance, even under non optimal training conditions (see paper for details). While other models, e.g., DeepLab v3+, deliver performance on a similar level, SegForestNet is better at predicting small object such as cars properly. It predicts proper rectangles rather than round-ish shapes. Also, car segments which should be disconnected may merge into one larger region when using other models.
+Our model delivers state-of-the-art performance, even under non optimal training conditions (see paper for details). While other models, e.g., DeepLab v3+, deliver performance on a similar level, SegForestNet is better at predicting small object such as cars properly. It predicts proper rectangles rather than round-ish shapes. Also, car segments which should be disconnected may merge into one larger region when using other models. Model weights are available in [this release](https://github.com/gritzner/SegForestNet/releases/tag/2024-04).
 
 Mean $F_1$ scores:
 
